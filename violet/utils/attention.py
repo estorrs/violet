@@ -21,34 +21,39 @@ def transparent_cmap(cmap, n=255, a=.8):
     return mycmap
 
 
-def plot_attention(img, attn, num_patches=14, figsize=(10, 4), display='head',
-                   cmap=plt.cm.Greens, alpha=.5):
+def plot_attention(img, attn, figsize=(10, 4), display='head',
+                   cmap=plt.cm.Greens, alpha=.5, overlay_only=False):
     # img: (h, w, c)
     # attn: (n_heads, d, d)
     cm = transparent_cmap(cmap)
 
     # if displaying every head
     if display == 'head':
-        fig, axs = plt.subplots(3, attn.shape[0], figsize=figsize)
+        fig, axs = plt.subplots(1 if overlay_only else 3, attn.shape[0],
+                                figsize=figsize, squeeze=False)
         for i in range(attn.shape[0]):
-            axs[1, i].imshow(img)
-
             # keep only patch attention
             head_attn = attn[i, 0, 1:]
+            num_patches = int(np.sqrt(head_attn.shape[-1]))
             head_attn = head_attn.reshape(num_patches, num_patches)
             axs[0, i].imshow(img, alpha=alpha)
             axs[0, i].imshow(resize(head_attn,
                              (img.shape[0], img.shape[1])), cmap=cm)
-            axs[2, i].imshow(head_attn, cmap=cm)
+            if not overlay_only:
+                axs[1, i].imshow(img)
+                axs[2, i].imshow(head_attn, cmap=cm)
             for ax in axs[:, i]:
                 ax.set_xticks([])
                 ax.set_yticks([])
 
             axs[0, i].set_title(f'head {i}')
 
-        axs[0, 0].set_ylabel('overlay')
-        axs[1, 0].set_ylabel('image')
-        axs[2, 0].set_ylabel('attention')
+        if not overlay_only:
+            axs[0, 0].set_ylabel('overlay')
+            axs[1, 0].set_ylabel('image')
+            axs[2, 0].set_ylabel('attention')
+        else:
+            axs[0, 0].set_ylabel('Attention Overlay')
     # mean of all heads
     else:
         fig, axs = plt.subplots(3, 1, figsize=figsize)
@@ -101,7 +106,7 @@ def get_image_attention(img, model, apply_transform=True):
 
 
 def plot_image_attention(img, model, apply_transform=True, display='head',
-                         alpha=.5):
+                         alpha=.5, overlay_only=False):
     """
     Plot attention for img
 
@@ -126,4 +131,5 @@ def plot_image_attention(img, model, apply_transform=True, display='head',
     interp = interp1d([np.min(img), np.max(img)], [0, 1])
     img = interp(img)
 
-    return plot_attention(img, attn, display=display, alpha=alpha)
+    return plot_attention(img, attn, display=display, alpha=alpha,
+                          overlay_only=overlay_only)

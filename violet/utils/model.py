@@ -21,6 +21,10 @@ def load_pretrained_model(pretrained_weights, model_name='vit_small',
 
 
 def predict(dataloader, model):
+    """
+    Utility function to collate predictions from a given
+    model/dataloader
+    """
     predictions = torch.zeros((len(dataloader.dataset.samples),
                                model.cls_token.shape[-1]))
     is_cuda = next(model.parameters()).is_cuda

@@ -17,6 +17,7 @@ def listfiles(folder, regex=None):
             elif re.findall(regex, os.path.join(root, filename)):
                 yield os.path.join(root, filename)
 
+
 def dino_he_transform(resize=(224, 224)):
     return transforms.Compose([
         transforms.Resize(resize, interpolation=3),
@@ -27,7 +28,6 @@ def dino_he_transform(resize=(224, 224)):
     ])
 
 
-
 class ImageRegressionDataset(torch.utils.data.Dataset):
     """
     Constructs image dataset where the targets are
@@ -35,15 +35,31 @@ class ImageRegressionDataset(torch.utils.data.Dataset):
 
     Assumes target_df index and images in root_dir
     have matching sample names
+
+    If regexs is a list only filenames with those patterns
+    will be used
     """
-    def __init__(self, root_dir, target_df, transform=None):
+    def __init__(self, root_dir, target_df, transform=None,
+                 exclude_regexs=None, include_regexs=None):
         self.root_dir = root_dir
         self.transform = transform
 
         pool = set(target_df.index)
         self.imgs = sorted(listfiles(root_dir))
+
         self.imgs = [i for i in self.imgs
                      if i.split('/')[-1].split('.')[0] in pool]
+
+        if include_regexs is not None:
+            self.imgs = [i for i in self.imgs
+                         if any([re.match(x, i) is not None
+                                 for x in include_regexs])]
+
+        if exclude_regexs is not None:
+            self.imgs = [i for i in self.imgs
+                         if not any([re.match(x, i) is not None
+                                     for x in exclude_regexs])]
+
         idxs = [i.split('/')[-1].split('.')[0] for i in self.imgs]
         target_df = target_df.loc[idxs]
 
@@ -105,23 +121,38 @@ def image_classification_dataloaders(root_dir, batch_size=64):
 
 
 def image_regression_dataloaders(root_dir, target_df, transform=None,
-                                 batch_size=64, resize=(224, 224)):
+                                 batch_size=64, resize=(224, 224),
+                                 val_regexs=None):
     """
     Get training and validation dataloaders for multivariate regression.
 
     The image directory should have subfolders 'train' and 'val'
+    Or optionally with val_regexs you can include regexs for image names you
+    would like in the validation set, all other samples will go in the training
+    dataset.
 
-    The target_df should contain regression targets
+    The target_df should contain regression targets. The images in root
+    directory will be automatically filtered to match those specified in
+    target_df.
         - rows are samples. target_df index should be names of
-        corresponding image in root_dir.
+        corresponding image in root_dir, but with file extension removed.
         - columns are target variables.
     """
-    transform = dino_he_transform(resize=resize)
+    if transform is None:
+        transform = dino_he_transform(resize=resize)
 
-    train_dataset = ImageRegressionDataset(os.path.join(root_dir, 'train'),
-                                           target_df, transform=transform)
-    val_dataset = ImageRegressionDataset(os.path.join(root_dir, 'val'),
-                                         target_df, transform=transform)
+    if val_regexs is None:
+        train_dataset = ImageRegressionDataset(os.path.join(root_dir, 'train'),
+                                               target_df, transform=transform)
+        val_dataset = ImageRegressionDataset(os.path.join(root_dir, 'val'),
+                                             target_df, transform=transform)
+    else:
+        train_dataset = ImageRegressionDataset(root_dir,
+                                               target_df, transform=transform,
+                                               exclude_regexs=val_regexs)
+        val_dataset = ImageRegressionDataset(root_dir,
+                                             target_df, transform=transform,
+                                             include_regexs=val_regexs)
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,

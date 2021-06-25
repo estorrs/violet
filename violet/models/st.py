@@ -88,14 +88,14 @@ class STLearner(object):
         self.phase = '2.finetune_unfrozen_vit'
 
     def save_checkpoint(self, tag=''):
-        chkpt = f'{self.phase}{tag}.pt'
+        chkpt = f'{self.phase}{tag}.pth'
         save_path = os.path.join(self.checkpoint_dir, chkpt)
         torch.save(self.model.state_dict(), save_path)
 
         return save_path
 
     def save_final(self):
-        save_path = os.path.join(self.checkpoint_dir, 'final.pt')
+        save_path = os.path.join(self.checkpoint_dir, 'final.pth')
         torch.save(self.model.state_dict(), save_path)
         summary_path = os.path.join(self.run_dir, 'summary.json')
         json.dump(self.summary, open(summary_path, 'w'))

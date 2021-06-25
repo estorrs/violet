@@ -1,32 +1,12 @@
-import os
-
 import pprint
 import torch
-import scanpy as sc
 import pandas as pd
 
 from violet.models.st import STRegressor, STLearner
 from violet.utils.model import load_pretrained_model
 from violet.utils.dataloaders import image_regression_dataloaders
-from violet.utils.logging import get_writer, collate_st_learner_params
-
-
-def process_adata(sid, fp, markers, n_top_genes=200, min_counts=2500):
-    a = sc.read_visium(fp)
-    a.var_names_make_unique()
-    a.var["mt"] = a.var_names.str.startswith("MT-")
-    sc.pp.calculate_qc_metrics(a, qc_vars=["mt"], inplace=True)
-    sc.pp.filter_cells(a, min_counts=min_counts)
-    a.obs.index = [f'{sid}_{x}' for x in a.obs.index]
-    sc.pp.normalize_total(a, inplace=True)
-    sc.pp.log1p(a)
-    sc.pp.highly_variable_genes(a, flavor="seurat", n_top_genes=n_top_genes)
-
-    f = a[:, markers]
-
-    df = pd.DataFrame(f.X.toarray(), columns=f.var.index, index=f.obs.index)
-
-    return df
+from violet.utils.logging import collate_st_learner_params
+from violet.utils.preprocessing import process_adata
 
 
 def get_target_df(adata_map, markers, min_counts=2500, n_top_genes=200):
@@ -41,6 +21,7 @@ def get_target_df(adata_map, markers, min_counts=2500, n_top_genes=200):
             targets = pd.concat((targets, df), axis=0)
 
     return targets
+
 
 def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
                     gpu=True, targets=None, min_counts=2500,

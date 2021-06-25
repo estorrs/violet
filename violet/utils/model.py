@@ -1,6 +1,9 @@
+import json
+
 import torch
 
 from violet.models import vit_small
+from violet.models.st import STRegressor
 from violet.utils.dino_utils import load_pretrained_weights
 
 
@@ -18,6 +21,21 @@ def load_pretrained_model(pretrained_weights, model_name='vit_small',
                             patch_size)
 
     return model
+
+
+def load_trained_st_regressor(weights, summary):
+    """
+    Loads a trained regressor from a STLearner training run.
+
+    Run must have saved checkpoint weights and a summary file.
+    """
+    vit = vit_small()
+
+    regressor = STRegressor(vit, len(summary['dataset']['targets']))
+
+    regressor.load_state_dict(torch.load(weights))
+
+    return regressor
 
 
 def predict(dataloader, model):

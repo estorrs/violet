@@ -77,7 +77,7 @@ def extract_st_tiles(data_map):
     return imgs, img_ids
 
 
-def extract_svs_tiles(sample_to_svs, resolution=55.):
+def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5):
     imgs, img_ids = [], []
     for sample, svs in sample_to_svs.items():
         o = OpenSlide(svs)
@@ -97,7 +97,7 @@ def extract_svs_tiles(sample_to_svs, resolution=55.):
                 r1, r2 = r * tile_size, (r + 1) * tile_size
                 c1, c2 = c * tile_size, (c + 1) * tile_size
                 tile = img[r1:r2, c1:c2]
-                if not is_background(tile):
+                if not is_background(tile, coverage=background_pct):
                     imgs.append(tile)
                     img_ids.append(f'{sample}_{r}_{c}')
 

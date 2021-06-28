@@ -24,8 +24,61 @@ def dino_he_transform(resize=(224, 224)):
         transforms.ToTensor(),
         # normalize by means and stds from ST histopathology dataset
         # rather than imagenet
-        transforms.Normalize((0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
+        transforms.Normalize(
+            (0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
     ])
+
+
+class ImagePredictionDataset(torch.utils.data.Dataset):
+    """
+    Constructs image dataset from image directory if root_dir is a
+    directory. root_dir can also be a list of image filepaths
+
+    If include or exclude regexs is a list only filenames with those patterns
+    will be used.
+
+    If pad is true then pad the last batch so it has a length of batch_size
+    """
+    def __init__(self, root_dir, transform=None, pad=True,
+                 exclude_regexs=None, include_regexs=None,
+                 batch_size=64):
+        self.root_dir = root_dir
+        self.transform = transform
+
+        if isinstance(root_dir, str):
+            self.imgs = sorted(listfiles(root_dir))
+        else:
+            self.imgs = sorted(self.root_dir)
+
+        if include_regexs is not None:
+            self.imgs = [i for i in self.imgs
+                         if any([re.match(x, i) is not None
+                                 for x in include_regexs])]
+
+        if exclude_regexs is not None:
+            self.imgs = [i for i in self.imgs
+                         if not any([re.match(x, i) is not None
+                                     for x in exclude_regexs])]
+
+        idxs = [i.split('/')[-1].split('.')[0] for i in self.imgs]
+
+        if pad:
+            n = batch_size - (len(idxs) % batch_size)
+            for i in range(n):
+                idxs.append(f'<pad_{i}>')
+                self.imgs.append(self.imgs[0])
+
+        self.samples = np.asarray(idxs)
+
+    def __len__(self):
+        return len(self.imgs)
+
+    def __getitem__(self, idx):
+        img_loc = self.imgs[idx]
+        image = default_loader(img_loc)
+        if self.transform is not None:
+            image = self.transform(image)
+        return image
 
 
 class ImageRegressionDataset(torch.utils.data.Dataset):
@@ -168,3 +221,31 @@ def image_regression_dataloaders(root_dir, target_df, transform=None,
     )
 
     return train_dataloader, val_dataloader
+
+
+def prediction_dataloader(root_dir, transform=None,
+                          batch_size=64, resize=(224, 224), pad=True,
+                          include_regexs=None, exclude_regexs=None):
+    """
+    Get dataloader for image prediction
+
+    If include or exclude regexs is a list those regexs will be used to
+    filter the filepaths in root_dir
+
+    if pad is true will add extra images to last batch so it is not dropped
+    """
+    if transform is None:
+        transform = dino_he_transform(resize=resize)
+
+    dataset = ImagePredictionDataset(
+            root_dir, transform=transform, pad=True, batch_size=batch_size,
+            exclude_regexs=exclude_regexs, include_regexs=include_regexs)
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        shuffle=False,
+        batch_size=batch_size,
+        drop_last=True,
+    )
+
+    return dataloader

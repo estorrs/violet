@@ -10,7 +10,7 @@ def get_writer(log_dir):
 
 
 def collate_st_learner_params(img_dir, weights, samples, val_samples, gpu,
-                              min_counts, max_lr, run_dir,
+                              min_counts, max_lr, run_dir, resolution,
                               train_dataloader, val_dataloader,
                               vit):
     return {
@@ -18,6 +18,7 @@ def collate_st_learner_params(img_dir, weights, samples, val_samples, gpu,
         'dataset': {
             'image_directory': img_dir,
             'targets': list(train_dataloader.dataset.labels),
+            'resolution': resolution,
             'min_counts': min_counts,
             'train_dataset': {
                 'samples': [s for s in samples if s not in val_samples],

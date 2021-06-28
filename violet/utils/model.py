@@ -1,9 +1,6 @@
-import json
-
 import torch
 
 from violet.models import vit_small
-from violet.models.st import STRegressor
 from violet.utils.dino_utils import load_pretrained_weights
 
 
@@ -23,37 +20,41 @@ def load_pretrained_model(pretrained_weights, model_name='vit_small',
     return model
 
 
-def load_trained_st_regressor(weights, summary):
-    """
-    Loads a trained regressor from a STLearner training run.
-
-    Run must have saved checkpoint weights and a summary file.
-    """
-    vit = vit_small()
-
-    regressor = STRegressor(vit, len(summary['dataset']['targets']))
-
-    regressor.load_state_dict(torch.load(weights))
-
-    return regressor
-
-
-def predict(dataloader, model):
+def predict(dataloader, model, out_dim=None):
     """
     Utility function to collate predictions from a given
-    model/dataloader
+    model/dataloader.
+
+    If out_dim not provided then assumes model is a vit
+    that has output dim of size cls_token
     """
-    predictions = torch.zeros((len(dataloader.dataset.samples),
-                               model.cls_token.shape[-1]))
+    if out_dim is None:
+        out_dim = model.cls_token.shape[-1]
+
+    predictions = torch.zeros((len(dataloader.dataset.samples), out_dim))
     is_cuda = next(model.parameters()).is_cuda
 
     model.eval()
     with torch.no_grad():
-        for i, (x, y) in enumerate(dataloader):
-            if is_cuda:
-                x, y = x.cuda(), y.cuda()
-            preds = model(x)
-            predictions[i * dataloader.batch_size:(i+1) * dataloader.batch_size] = preds
+        # if there are targets in dataloader
+        # refactor eventually so wont break for batch size of 2
+        if len(next(iter(dataloader))) == 2:
+            for i, (x, y) in enumerate(dataloader):
+                if is_cuda:
+                    x, y = x.cuda(), y.cuda()
+                preds = model(x)
+                r1 = i * dataloader.batch_size
+                r2 = (i+1) * dataloader.batch_size
+                predictions[r1:r2] = preds
+        # otherwise assume single
+        else:
+            for i, x in enumerate(dataloader):
+                if is_cuda:
+                    x = x.cuda()
+                preds = model(x)
+                r1 = i * dataloader.batch_size
+                r2 = (i+1) * dataloader.batch_size
+                predictions[r1:r2] = preds
 
     if predictions.is_cuda:
         predictions = predictions.cpu()

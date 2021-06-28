@@ -213,6 +213,19 @@ class VisionTransformer(nn.Module):
                 # return attention of the last block
                 return blk(x, return_attention=True)
 
+    def get_all_selfattention(self, x):
+        attns = None
+        x = self.prepare_tokens(x)
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            attn = blk(x, return_attention=True)
+            if attns is None:
+                attns = attn.unsqueeze(0)
+            else:
+                attns = torch.cat((attns, attn.unsqueeze(0)), dim=1)
+
+        return attns
+
     def get_intermediate_layers(self, x, n=1):
         x = self.prepare_tokens(x)
         # we return the output tokens from the `n` last blocks

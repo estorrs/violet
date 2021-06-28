@@ -24,7 +24,7 @@ def transparent_cmap(cmap, n=255, a=.8):
 def plot_attention(img, attn, figsize=(10, 4), display='head',
                    cmap=plt.cm.Greens, alpha=.5, overlay_only=False):
     # img: (h, w, c)
-    # attn: (n_heads, d, d)
+    # attn: (n_heads, d * d + 1)
     cm = transparent_cmap(cmap)
 
     # if displaying every head
@@ -58,6 +58,7 @@ def plot_attention(img, attn, figsize=(10, 4), display='head',
     else:
         fig, axs = plt.subplots(3, 1, figsize=figsize)
         axs[1].imshow(img)
+        num_patches = int(np.sqrt(attn.shape[-1]))
         mean_attn = attn[:, 0, 1:].reshape(attn.shape[0],
                                            num_patches, num_patches)
         mean_attn = mean_attn.mean(axis=0)
@@ -133,3 +134,94 @@ def plot_image_attention(img, model, apply_transform=True, display='head',
 
     return plot_attention(img, attn, display=display, alpha=alpha,
                           overlay_only=overlay_only)
+
+
+def get_all_image_attention(img, model, apply_transform=True):
+    transform = dino_he_transform()
+    if isinstance(img, str):
+        img = default_loader(img)
+
+    if apply_transform:
+        img = transform(img)
+
+    # add batch dimension
+    imgs = img.unsqueeze(0)
+
+    # move to gpu if model is cuda
+    if next(model.parameters()).is_cuda and not imgs.is_cuda:
+        imgs = imgs.cuda()
+
+    # make sure we are in eval mode
+    model.eval()
+    with torch.no_grad():
+        attns = model.get_all_selfattention(imgs)
+
+    # just 1 img
+    attn = attns[0]
+
+    # put to cpu if needed
+    if attn.is_cuda:
+        attn = attn.cpu()
+
+    return attn.numpy()
+
+
+def plot_attention_rollup(img, model, apply_transform=True,
+                          alpha=.5, overlay_only=False):
+    """
+    attns: (layers, heads, patches)
+    """
+    attns = get_all_image_attention(img, model, apply_transform=True)
+    # average attention over heads
+    attns = attns.mean(axis=1)
+    print(attns.shape)
+    # compute rollup
+    rollup = attns[0]
+    for l in range(1, attns.shape[0], 1):
+        rollup = np.dot(attns[l], rollup)
+    print(rollup.shape)
+
+
+    # load img if needed
+    if isinstance(img, str):
+        img = np.asarray(default_loader(img))
+    else:
+        # make sure we are cpu/numpy
+        if isinstance(img, torch.tensor):
+            # move channel axis
+            img = img.view(1, 2, 0)
+            if img.is_cuda:
+                img = img.cpu()
+            img = img.numpy()
+
+    interp = interp1d([np.min(img), np.max(img)], [0, 1])
+    img = interp(img)
+
+    return plot_rollup(img, rollup[0, 1:], alpha=alpha,
+                       overlay_only=overlay_only)
+
+
+def plot_rollup(img, attn, figsize=(5, 3), cmap=plt.cm.Greens,
+                alpha=.5, overlay_only=False):
+    # img: (h, w, c)
+    cm = transparent_cmap(cmap)
+
+    # if displaying every head
+    fig, axs = plt.subplots(3, 1, figsize=figsize)
+    axs[1].imshow(img)
+    print(attn.shape)
+    num_patches = int(np.sqrt(attn.shape[-1]))
+    attn = attn.reshape((num_patches, num_patches))
+    print(attn.shape)
+    axs[0].imshow(img, alpha=alpha)
+    axs[0].imshow(resize(attn, (img.shape[0], img.shape[1])), cmap=cm)
+    axs[2].imshow(attn, cmap=cm)
+    for ax in axs:
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    axs[0].set_ylabel('overlay')
+    axs[1].set_ylabel('image')
+    axs[2].set_ylabel('attention')
+
+    return fig, axs

@@ -29,6 +29,17 @@ def dino_he_transform(resize=(224, 224)):
     ])
 
 
+def imagenet_he_transform(resize=(224, 224)):
+    return transforms.Compose([
+        transforms.Resize(resize, interpolation=3),
+        transforms.ToTensor(),
+        # normalize by means and stds from imagenet since we are
+        # using imagenet pretrained model
+        transforms.Normalize(
+            (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
+
+
 class ImagePredictionDataset(torch.utils.data.Dataset):
     """
     Constructs image dataset from image directory if root_dir is a

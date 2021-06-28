@@ -16,11 +16,15 @@ class STRegressor(nn.Module):
 
     Attaches a single linear layer as classification head.
     """
-    def __init__(self, model, num_classes):
+    def __init__(self, model, num_classes, out_features=None):
         super().__init__()
 
+        # doesn't necessary need to be ViT. Although if it is not a ViT
+        # out_features will need to be passed in to specify in dimension
+        # for head
         self.vit = model
-        self.head = nn.Linear(self.vit.num_features, num_classes)
+        n = self.vit.num_features if out_features is None else out_features
+        self.head = nn.Linear(n, num_classes)
 
         # freeze vit weights
         for param in self.vit.parameters():

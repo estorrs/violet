@@ -5,6 +5,13 @@ import numpy as np
 import scanpy as sc
 import tifffile
 from openslide import OpenSlide
+#from skimage.transform import rescale
+
+
+def normalize_counts(a):
+    sc.pp.normalize_total(a, inplace=True)
+    sc.pp.log1p(a)
+    return a
 
 
 def process_adata(sid, fp, markers, n_top_genes=200, min_counts=2500):
@@ -14,8 +21,7 @@ def process_adata(sid, fp, markers, n_top_genes=200, min_counts=2500):
     sc.pp.calculate_qc_metrics(a, qc_vars=["mt"], inplace=True)
     sc.pp.filter_cells(a, min_counts=min_counts)
     a.obs.index = [f'{sid}_{x}' for x in a.obs.index]
-    sc.pp.normalize_total(a, inplace=True)
-    sc.pp.log1p(a)
+    a = normalize_counts(a)
     sc.pp.highly_variable_genes(a, flavor="seurat", n_top_genes=n_top_genes)
 
     f = a[:, markers]
@@ -75,6 +81,32 @@ def extract_st_tiles(data_map):
             img_ids.append(f'{s}_{barcode}')
 
     return imgs, img_ids
+
+
+def get_svs_specs(svs_fp):
+    o = OpenSlide(svs_fp)
+    return o.dimensions, float(o.properties['aperio.MPP'])
+
+
+def get_svs_tile_shape(svs_fp, resolution=55.):
+    (r, c), mpp = get_svs_specs(svs_fp)
+    tile_size = int(resolution // mpp)
+    n_rows = r // tile_size
+    n_cols = c // tile_size
+
+    return (n_rows, n_cols), tile_size
+
+
+def get_svs_array(svs_fp, scale=.05):
+    o = OpenSlide(svs_fp)
+    img = o.read_region((0, 0), 0, o.dimensions)
+    img = img.resize((int(o.dimensions[0] * scale),
+                      int(o.dimensions[1] * scale)))
+    img = np.array(img)
+    if img.shape[-1] > 3:
+        img = img[:, :, :3]
+
+    return img
 
 
 def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5):

@@ -6,13 +6,15 @@ import torch
 import pandas as pd
 import scanpy as sc
 from PIL import Image
+from torchvision import models as torchvision_models
 
 from violet.models import vit_small
 from violet.models.st import STRegressor, STLearner
 from violet.utils.model import load_pretrained_model, predict
 from violet.utils.dataloaders import (
     prediction_dataloader, image_regression_dataloaders)
-from violet.utils.logging import collate_st_learner_params
+from violet.utils.logging import (
+    collate_st_learner_params, collate_imagenet_st_learner_params)
 from violet.utils.preprocessing import (
     process_adata, extract_st_tiles, extract_svs_tiles)
 
@@ -85,6 +87,78 @@ def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
         img_dir, weights, sorted(adata_map.keys()), val_samples, gpu,
         min_counts, max_lr, run_dir, resolution,
         train_dataloader, val_dataloader, regressor)
+    print('ST Learner summary:')
+    pprint.pprint(summary)
+    learner = STLearner(regressor, train_dataloader, val_dataloader,
+                        run_dir, max_lr=max_lr, summary=summary)
+
+    return learner
+
+
+def load_imagenet_st_learner(img_dir, weights, adata_map, run_dir,
+                             val_samples=None, gpu=True, targets=None,
+                             min_counts=2500, max_lr=1e-4, resolution=55.,
+                             model_name='resnet50'):
+    """
+    Utility function for loading a STLearner whose base is the specified
+    torchvision pretrained model.
+
+    The STlearner can then be used to train a finetuned model for
+    ST expression prediction from HE tiles.
+
+    Parameters
+    ----------
+    img_dir: str
+        - Directory containing HE image tiles. Image filenames
+        (not including the file extension) must correspond with the sample name
+        in adata_map. Image filenames have the following format:
+        <sample_id>_<barcode>.<file extension>
+    weights: str
+        - Filepath to weights of pretrained vit
+    adata_map: dict
+        - Keys are sample_id. Values are filepath of visium spaceranger
+        outs. I.e. the directory read by sc.read_visium().
+    run_dir: str
+        - ry files will be produced. Directory path that checkpoints,
+        summary files, and tensorboardX output will be written to.
+    val_samples: list
+        - Samples ids to be used as validation dataset. All others will be
+        used in training. If None, will take an 80/20 train/val split
+        across all data.
+    gpu: bool
+        - Whether to use gpu or not. If system does not have a gpu
+        this should be set to False.
+    targets: list
+        - Genes to use as target variables.
+    min_counts: int
+        - Spots with < min_counts will be excluded from the dataset
+    max_lr: float
+        - Max learning rate for cos scheduler.
+    """
+    target_df = get_target_df(adata_map, targets, min_counts=min_counts)
+
+    val_regexs = [r'.*' + s for s in val_samples]
+    train_dataloader, val_dataloader = image_regression_dataloaders(
+            img_dir, target_df, val_regexs=val_regexs)
+
+    if model_name == 'resnet50':
+        model = torchvision_models.resnet50(pretrained=True,)
+    elif model_name == 'inception_v3':
+        model = torchvision_models.inception_v3(pretrained=True,)
+    else:
+        s = f'{model} is not a valid model name. '
+        s += 'Use one of the following: [resnet50, inception_v3]'
+        raise RuntimeError(s)
+
+    regressor = STRegressor(model, len(train_dataloader.dataset.labels),
+                            out_features=model.fc.out_features)
+    if gpu:
+        regressor = regressor.cuda()
+
+    summary = collate_imagenet_st_learner_params(
+        img_dir, weights, sorted(adata_map.keys()), val_samples, gpu,
+        min_counts, max_lr, run_dir, resolution,
+        train_dataloader, val_dataloader, regressor, model_name)
     print('ST Learner summary:')
     pprint.pprint(summary)
     learner = STLearner(regressor, train_dataloader, val_dataloader,

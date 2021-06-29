@@ -10,8 +10,8 @@ def get_writer(log_dir):
 
 
 def collate_st_learner_params(img_dir, weights, samples, val_samples, gpu,
-                              min_counts, max_lr, run_dir, resolution,
-                              train_dataloader, val_dataloader,
+                              min_counts, frozen_lr, unfrozen_lr, run_dir,
+                              resolution, train_dataloader, val_dataloader,
                               vit):
     return {
         'run_directory': run_dir,
@@ -42,7 +42,8 @@ def collate_st_learner_params(img_dir, weights, samples, val_samples, gpu,
         'hyperparams': {
             'batch_size': train_dataloader.batch_size,
             'loss': 'torch.nn.MSELoss',
-            'max_lr': max_lr,
+            'frozen_lr': frozen_lr,
+            'unfrozen_lr': unfrozen_lr,
             'scheduler': 'torch.optim.lr_scheduler.OneCycleLR',
             'opt': 'torch.optim.Adam',
             'gpu': gpu,
@@ -51,8 +52,8 @@ def collate_st_learner_params(img_dir, weights, samples, val_samples, gpu,
 
 
 def collate_imagenet_st_learner_params(img_dir, weights, samples, val_samples,
-                                       gpu, min_counts, max_lr, run_dir,
-                                       resolution, train_dataloader,
+                                       gpu, min_counts, frozen_lr, unfrozen_lr,
+                                       run_dir, resolution, train_dataloader,
                                        val_dataloader, model, model_name):
     return {
         'run_directory': run_dir,
@@ -81,7 +82,8 @@ def collate_imagenet_st_learner_params(img_dir, weights, samples, val_samples,
         'hyperparams': {
             'batch_size': train_dataloader.batch_size,
             'loss': 'torch.nn.MSELoss',
-            'max_lr': max_lr,
+            'frozen_lr': frozen_lr,
+            'unfrozen_lr': unfrozen_lr,
             'scheduler': 'torch.optim.lr_scheduler.OneCycleLR',
             'opt': 'torch.optim.Adam',
             'gpu': gpu,

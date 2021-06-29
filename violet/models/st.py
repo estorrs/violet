@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 
 import torch
@@ -44,9 +45,10 @@ class STLearner(object):
     Learner for STRegressor
     """
     def __init__(self, model, train_dataloader, val_dataloader, run_dir,
-                 max_lr=1e-4, verbose=True, summary=None):
+                 frozen_lr=1e-4, unfrozen_lr=1e-4, verbose=True, summary=None):
         self.model = model
-        self.max_lr = max_lr
+        self.frozen_lr = frozen_lr
+        self.unfrozen_lr = unfrozen_lr
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
         self.phase = '1.finetune_frozen_vit'
@@ -69,22 +71,30 @@ class STLearner(object):
 
         self.is_cuda = next(self.model.parameters()).is_cuda
 
+        self.start_time = time.time()
+
     def _get_optimizer(self, epochs):
-        opt = torch.optim.Adam(self.model.parameters(), lr=self.max_lr)
+        if self.phase == '1.finetune_frozen_vit':
+            lr = self.frozen_lr
+        else:
+            lr = self.unfrozen_lr
+
+        opt = torch.optim.Adam(self.model.parameters(), lr=lr)
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            opt, max_lr=self.max_lr,
+            opt, max_lr=lr,
             steps_per_epoch=len(self.train_dataloader), epochs=epochs)
 
         return opt, scheduler
 
-    def _summarize(self, epoch, train_loss, val_loss):
+    def _summarize(self, epoch, train_loss, val_loss, time_delta):
         if 'training' not in self.summary:
             self.summary['training'] = {}
         if self.phase not in self.summary['training']:
             self.summary['training'][self.phase] = {}
         self.summary['training'][self.phase][epoch] = {
             'train_loss': train_loss.tolist(),
-            'val_loss': val_loss.tolist()
+            'val_loss': val_loss.tolist(),
+            'time_elapsed': time_delta
         }
 
     def unfreeze_vit(self):
@@ -101,16 +111,20 @@ class STLearner(object):
     def save_final(self):
         save_path = os.path.join(self.checkpoint_dir, 'final.pth')
         torch.save(self.model.state_dict(), save_path)
+
+        # add train time
+        self.summary['training']['time_elapsed'] = time.time() - self.start
         summary_path = os.path.join(self.run_dir, 'summary.json')
         json.dump(self.summary, open(summary_path, 'w'))
 
         return save_path, summary_path
 
-    def fit(self, epochs):
+    def fit(self, epochs, save_every=None):
         opt, scheduler = self._get_optimizer(epochs)
 
         for epoch in range(epochs):
             train_loss, val_loss = 0., 0.
+            start = time.time()
 
             self.model.train()
             for i, (x, y) in enumerate(self.train_dataloader):
@@ -124,6 +138,7 @@ class STLearner(object):
 
                 train_loss += loss
             scheduler.step()
+            time_delta = time.time() - start
 
             self.model.eval()
             with torch.no_grad():
@@ -138,7 +153,10 @@ class STLearner(object):
             train_loss /= len(self.train_dataloader)
             val_loss /= len(self.val_dataloader)
 
-            self._summarize(epoch + 1, train_loss, val_loss)
+            self._summarize(epoch + 1, train_loss, val_loss, time_delta)
+
+            if save_every is not None and epoch + 1 % save_every == 0:
+                self.save_checkpoint(tag=f'_{epoch + 1}')
 
             if self.writer is not None:
                 self.writer.add_scalar(f'{self.phase}: train loss', train_loss,
@@ -147,4 +165,7 @@ class STLearner(object):
                                        epoch + 1)
 
             if self.verbose:
-                print(f'epoch: {epoch}, train loss: {train_loss}, val loss: {val_loss}')
+                out_str = f'epoch: {epoch}, train loss: {train_loss}, '
+                out_str += f'val loss: {val_loss}, '
+                out_str += f'time: {time_delta}'
+                print(out_str)

@@ -12,7 +12,7 @@ from violet.models import vit_small
 from violet.models.st import STRegressor, STLearner
 from violet.utils.model import load_pretrained_model, predict
 from violet.utils.dataloaders import (
-    prediction_dataloader, image_regression_dataloaders)
+    prediction_dataloader, image_regression_dataloaders, imagenet_he_transform)
 from violet.utils.logging import (
     collate_st_learner_params, collate_imagenet_st_learner_params)
 from violet.utils.preprocessing import (
@@ -35,7 +35,7 @@ def get_target_df(adata_map, markers, min_counts=2500, n_top_genes=200):
 
 def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
                     gpu=True, targets=None, min_counts=2500,
-                    max_lr=1e-4, resolution=55.):
+                    frozen_lr=1e-4, unfrozen_lr=5e-3, resolution=55.):
     """
     Utility function for loading a STLearner whose base is a vit
     with the associated weights.
@@ -85,20 +85,21 @@ def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
 
     summary = collate_st_learner_params(
         img_dir, weights, sorted(adata_map.keys()), val_samples, gpu,
-        min_counts, max_lr, run_dir, resolution,
+        min_counts, frozen_lr, unfrozen_lr, run_dir, resolution,
         train_dataloader, val_dataloader, regressor)
     print('ST Learner summary:')
     pprint.pprint(summary)
     learner = STLearner(regressor, train_dataloader, val_dataloader,
-                        run_dir, max_lr=max_lr, summary=summary)
+                        run_dir, frozen_lr=frozen_lr, unfrozen_lr=unfrozen_lr,
+                        summary=summary)
 
     return learner
 
 
 def load_imagenet_st_learner(img_dir, weights, adata_map, run_dir,
                              val_samples=None, gpu=True, targets=None,
-                             min_counts=2500, max_lr=1e-4, resolution=55.,
-                             model_name='resnet50'):
+                             min_counts=2500, frozen_lr=1e-4, unfrozen_lr=5e-3,
+                             resolution=55., model_name='resnet50'):
     """
     Utility function for loading a STLearner whose base is the specified
     torchvision pretrained model.
@@ -138,8 +139,10 @@ def load_imagenet_st_learner(img_dir, weights, adata_map, run_dir,
     target_df = get_target_df(adata_map, targets, min_counts=min_counts)
 
     val_regexs = [r'.*' + s for s in val_samples]
+    # use imagenet transform since we are pretrained from imagenet
+    transform = imagenet_he_transform
     train_dataloader, val_dataloader = image_regression_dataloaders(
-            img_dir, target_df, val_regexs=val_regexs)
+            img_dir, target_df, val_regexs=val_regexs, transform=transform)
 
     if model_name == 'resnet50':
         model = torchvision_models.resnet50(pretrained=True,)
@@ -157,17 +160,19 @@ def load_imagenet_st_learner(img_dir, weights, adata_map, run_dir,
 
     summary = collate_imagenet_st_learner_params(
         img_dir, weights, sorted(adata_map.keys()), val_samples, gpu,
-        min_counts, max_lr, run_dir, resolution,
+        min_counts, frozen_lr, unfrozen_lr, run_dir, resolution,
         train_dataloader, val_dataloader, regressor, model_name)
     print('ST Learner summary:')
     pprint.pprint(summary)
     learner = STLearner(regressor, train_dataloader, val_dataloader,
-                        run_dir, max_lr=max_lr, summary=summary)
+                        run_dir, frozen_lr=frozen_lr, unfrozen_lr=unfrozen_lr,
+                        summary=summary)
 
     return learner
 
 
-def run_st_learner(learner, frozen_epochs, unfrozen_epochs):
+def run_st_learner(learner, frozen_epochs, unfrozen_epochs,
+                   save_every=2):
     print(f'Training frozen vit for {frozen_epochs} epochs')
     learner.fit(frozen_epochs)
 
@@ -178,7 +183,7 @@ def run_st_learner(learner, frozen_epochs, unfrozen_epochs):
     learner.unfreeze_vit()
 
     print(f'Training unfrozen vit for {unfrozen_epochs} epochs')
-    learner.fit(unfrozen_epochs)
+    learner.fit(unfrozen_epochs, save_every=save_every)
 
     chkpt_fp, summary_fp = learner.save_final()
     print(f'Saved final checkpoint at {chkpt_fp}')

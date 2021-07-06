@@ -17,9 +17,12 @@ import subprocess
 from collections import defaultdict, deque
 
 import numpy as np
+from PIL import Image
 import torch
 from torch import nn
 import torch.distributed as dist
+import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
 from PIL import ImageFilter, ImageOps
 
 
@@ -44,6 +47,27 @@ class GaussianBlur(object):
         )
 
 
+class MultichannelGaussianBlur(object):
+    """
+    Apply Gaussian Blur to the multichannel image.
+    """
+    def __init__(self, p=0.5, kernel=9, radius_min=0.1, radius_max=2.):
+        self.prob = p
+        self.radius_min = radius_min
+        self.radius_max = radius_max
+        self.kernel = kernel
+
+    def __call__(self, img):
+        do_it = random.random() <= self.prob
+        if not do_it:
+            return img
+
+        for c in range(img.size(0)):
+            img[c:c+1] = F.gaussian_blur(
+                img[c:c+1], kernel_size=self.kernel, sigma=(self.radius_min, self.radius_max))
+        return img
+
+
 class Solarization(object):
     """
     Apply Solarization to the PIL image.
@@ -57,6 +81,21 @@ class Solarization(object):
         else:
             return img
 
+## class MultichannelSolarization(object):
+##     """
+##     Apply Solarization to the multichannel image.
+##     """
+##     def __init__(self, p, threshold=130):
+##         self.threshold = threshold  # pil default
+##         self.p = p
+## 
+##     def __call__(self, img):
+##         if random.random() < self.p:
+##             for c in range(img.size(0)):
+##                 img[c:c+1] = F.solarize(img[c:c+1], self.threshold)
+##         else:
+##             return img
+
 def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_name, patch_size):
     if os.path.isfile(pretrained_weights):
         state_dict = torch.load(pretrained_weights, map_location="cpu")
@@ -64,6 +103,9 @@ def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_nam
             print(f"Take key {checkpoint_key} in provided checkpoint dict")
             state_dict = state_dict[checkpoint_key]
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        # remove `backbone.` prefix induced by multicrop wrapper
+        # in newer version of dino
+        state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
         msg = model.load_state_dict(state_dict, strict=False)
         print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
     else:
@@ -602,3 +644,169 @@ def has_batchnorms(model):
         if isinstance(module, bn_types):
             return True
     return False
+
+
+class DataAugmentationDINO(object):
+    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number,
+                 data_type='oct'):
+        flip_and_color_jitter = transforms.Compose([
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomVerticalFlip(p=0.5),
+            transforms.RandomApply(
+                [transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)],
+                p=0.8
+            ),
+            transforms.RandomGrayscale(p=0.2),
+        ])
+
+        if data_type == 'oct':
+            norm = transforms.Normalize((0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
+        elif data_type == 'ffpe':
+            norm = transforms.Normalize((0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
+        else:
+            raise RuntimeError('Invalid data type')
+
+        normalize = transforms.Compose([
+            transforms.ToTensor(),
+            norm,
+        ])
+
+        # first global crop
+        self.global_transfo1 = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            flip_and_color_jitter,
+            GaussianBlur(1.0),
+            normalize,
+        ])
+        # second global crop
+        self.global_transfo2 = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            flip_and_color_jitter,
+            GaussianBlur(0.1),
+            Solarization(0.2),
+            normalize,
+        ])
+        # transformation for the local small crops
+        self.local_crops_number = local_crops_number
+        self.local_transfo = transforms.Compose([
+            transforms.RandomResizedCrop(96, scale=local_crops_scale, interpolation=Image.BICUBIC),
+            flip_and_color_jitter,
+            GaussianBlur(p=0.5),
+            normalize,
+        ])
+
+    def __call__(self, image):
+        crops = []
+        crops.append(self.global_transfo1(image))
+        crops.append(self.global_transfo2(image))
+        for _ in range(self.local_crops_number):
+            crops.append(self.local_transfo(image))
+        return crops
+
+
+class DataAugmentationDINOMultichannel(object):
+    def __init__(self, global_crops_scale, local_crops_scale, local_crops_number,
+                 resize=224):
+        flip_and_jitter = transforms.Compose([
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomVerticalFlip(p=0.5),
+            transforms.RandomApply(
+                [MultichannelJitter(brightness=0.4)],
+                p=0.8
+            ),
+        ])
+
+        # first global crop
+        self.global_transfo1 = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            flip_and_jitter,
+            MultichannelGaussianBlur(1.0),
+        ])
+        # second global crop
+        self.global_transfo2 = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+            flip_and_jitter,
+            MultichannelGaussianBlur(0.1),
+        #    MultichannelSolarization(0.2),
+        ])
+        # transformation for the local small crops
+        self.local_crops_number = local_crops_number
+        self.local_transfo = transforms.Compose([
+            transforms.RandomResizedCrop(96, scale=local_crops_scale, interpolation=Image.BICUBIC),
+            flip_and_jitter,
+            MultichannelGaussianBlur(p=0.5),
+        ])
+
+    def __call__(self, image):
+        crops = []
+        crops.append(self.global_transfo1(image))
+        crops.append(self.global_transfo2(image))
+        for _ in range(self.local_crops_number):
+            crops.append(self.local_transfo(image))
+        return crops
+
+
+class MultichannelJitter(torch.nn.Module):
+    def __init__(self, brightness=0):
+        super().__init__()
+        self.brightness = self._check_input(brightness, 'brightness')
+
+    @torch.jit.unused
+    def _check_input(self, value, name, center=1, bound=(0, float('inf')), clip_first_on_zero=True):
+        value = [center - float(value), center + float(value)]
+        if clip_first_on_zero:
+            value[0] = max(value[0], 0.0)
+
+        # if value is 0 or (1., 1.) for brightness/contrast/saturation
+        # or (0., 0.) for hue, do nothing
+        if value[0] == value[1] == center:
+            value = None
+        return value
+
+    @staticmethod
+    def get_params(brightness):
+        """Get the parameters for the randomized transform to be applied on image.
+
+        Args:
+            brightness (tuple of float (min, max), optional): The range from which the brightness_factor is chosen
+                uniformly. Pass None to turn off the transformation.
+            contrast (tuple of float (min, max), optional): The range from which the contrast_factor is chosen
+                uniformly. Pass None to turn off the transformation.
+
+        Returns:
+            tuple: The parameters used to apply the randomized transform
+            along with their random order.
+        """
+        fn_idx = torch.randperm(1)
+
+        b = None if brightness is None else float(
+            torch.empty(1).uniform_(brightness[0], brightness[1]))
+
+        return fn_idx, b
+
+
+    def forward(self, multichannel_img):
+        """
+        Args:
+            img (PIL Image or Tensor): Input image.
+        """
+        for channel in range(multichannel_img.size(0)):
+            img = multichannel_img[channel].unsqueeze(0)
+
+            fn_idx, brightness_factor = \
+                self.get_params(self.brightness)
+
+            for fn_id in fn_idx:
+                if fn_id == 0 and brightness_factor is not None:
+                    img = F.adjust_brightness(img, brightness_factor)
+
+            multichannel_img[channel] = img
+
+        return multichannel_img
+
+
+    def __repr__(self):
+        format_string = self.__class__.__name__ + '('
+        format_string += 'brightness={0}'.format(self.brightness)
+        format_string += ', contrast={0}'.format(self.contrast)
+        return format_string

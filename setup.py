@@ -33,9 +33,9 @@ setup(
         ],
     include_package_data=True,
 
-##     entry_points={
-##         'console_scripts': [
-##             'violet=violet.violet:main',
-##         ],
-##     },
+    entry_points={
+        'console_scripts': [
+            'violet-dino=violet.models.main_dino:main',
+        ],
+    },
 )

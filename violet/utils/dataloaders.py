@@ -8,6 +8,9 @@ from torchvision import datasets, transforms
 from torchvision.datasets.folder import default_loader
 
 
+from violet.utils.dino_utils import DataAugmentationDINOMultichannel
+
+
 def listfiles(folder, regex=None):
     """Return all files with the given regex in the given folder structure"""
     for root, folders, files in os.walk(folder):
@@ -26,6 +29,14 @@ def dino_he_transform(resize=(224, 224)):
         # rather than imagenet
         transforms.Normalize(
             (0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
+    ])
+
+
+def dino_multichannel_transform(resize=(224, 224)):
+    return transforms.Compose([
+        transforms.Resize(resize, interpolation=3),
+        transforms.Grayscale(),
+        transforms.ToTensor(),
     ])
 
 
@@ -257,6 +268,108 @@ def prediction_dataloader(root_dir, transform=None,
         shuffle=False,
         batch_size=batch_size,
         drop_last=True,
+    )
+
+    return dataloader
+
+
+# Multichannel dataloaders
+
+class MultichannelImageDataset(torch.utils.data.Dataset):
+    """
+    If include or exclude regexs is a list only filenames with those patterns
+    will be used.
+
+    If pad is true then pad the last batch so it has a length of batch_size
+    """
+    def __init__(self, root_dir, transform=None, pad=True,
+                 exclude_regexs=None, include_regexs=None,
+                 batch_size=64, return_dummy_y=False):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.load_image_transform = dino_multichannel_transform()
+        self.return_dummy_y = return_dummy_y
+
+        if isinstance(root_dir, str):
+            self.imgs = sorted(listfiles(root_dir, regex='.tif$'))
+        else:
+            self.imgs = sorted(self.root_dir)
+
+        if include_regexs is not None:
+            self.imgs = [i for i in self.imgs
+                         if any([re.match(x, i) is not None
+                                 for x in include_regexs])]
+
+        if exclude_regexs is not None:
+            self.imgs = [i for i in self.imgs
+                         if not any([re.match(x, i) is not None
+                                     for x in exclude_regexs])]
+
+        self.channels = set()
+        sample_to_pos_to_channel = {}
+        for i in self.imgs:
+            sample = i.split('/')[-3]
+            channel = i.split('/')[-2]
+            position = i.split('/')[-1].split('.')[0]
+            if sample not in sample_to_pos_to_channel:
+                sample_to_pos_to_channel[sample] = {}
+            if position not in sample_to_pos_to_channel[sample]:
+                sample_to_pos_to_channel[sample][position] = {}
+
+            sample_to_pos_to_channel[sample][position][channel] = i
+            self.channels.add(channel)
+        self.channels = sorted(self.channels)
+
+        self.imgs = []
+        self.samples = []
+        for sample, d in sample_to_pos_to_channel.items():
+            for pos, c_dict in d.items():
+                self.imgs.append([c_dict[c] for c in self.channels])
+                self.samples.append(f'{sample}_{pos}')
+
+        if pad:
+            n = batch_size - (len(self.samples) % batch_size)
+            for i in range(n):
+                self.samples.append(f'<pad_{i}>')
+                self.imgs.append(self.imgs[0])
+
+        self.imgs = np.asarray(self.imgs)
+        self.samples = np.asarray(self.samples)
+
+    def _load_image(self, fps):
+        imgs = [default_loader(fp) for fp in fps]
+        block = torch.cat([self.load_image_transform(img) for img in imgs],
+                          dim=0)
+        if self.transform is not None:
+            block = self.transform(block)
+        return block
+
+    def __len__(self):
+        return len(self.imgs)
+
+    def __getitem__(self, idx):
+        img_locs = self.imgs[idx]
+        block = self._load_image(img_locs)
+
+        if self.return_dummy_y:
+            return block, torch.zeros((1, 1))
+
+        return block
+
+
+def multichannel_image_dataloader(root_dir, batch_size=64, transform=None,
+                                       resize=(224, 224), pad=True,
+                                       shuffle=False):
+    """
+    Get training and validation dataloaders for an image directory.
+    """
+    dataset = MultichannelImageDataset(root_dir, transform=transform, pad=False)
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        shuffle=False,
+        batch_size=batch_size,
+        drop_last=not pad,
     )
 
     return dataloader

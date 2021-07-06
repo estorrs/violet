@@ -17,7 +17,7 @@ def plot_image_umap(xs, ys, fps, figsize=(10, 10), zoom=.2):
     ax.scatter(xs, ys)
     for x, y, fp in zip(xs, ys, fps):
         ab = AnnotationBbox(
-            OffsetImage(plt.imread(fp), zoom=zoom),
+            OffsetImage(plt.imread(fp) if isinstance(fp, str) else fp, zoom=zoom),
             (x, y), frameon=False, )
         ax.add_artist(ab)
 

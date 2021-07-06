@@ -1,11 +1,11 @@
 import torch
 
-from violet.models import vit_small
+from violet.models.vit import vit_small
 from violet.utils.dino_utils import load_pretrained_weights
 
 
 def load_pretrained_model(pretrained_weights, model_name='vit_small',
-                          patch_size=16):
+                          patch_size=16, in_chans=3):
     """
     Load pretrained DINO model.
 
@@ -13,7 +13,7 @@ def load_pretrained_model(pretrained_weights, model_name='vit_small',
 
     Currently only vit_small implemented
     """
-    model = vit_small(num_classes=0)
+    model = vit_small(num_classes=0, in_chans=in_chans)
     load_pretrained_weights(model, pretrained_weights, 'teacher', 'vit_small',
                             patch_size)
 

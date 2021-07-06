@@ -136,6 +136,10 @@ def plot_image_attention(img, model, apply_transform=True, display='head',
                           overlay_only=overlay_only)
 
 
+####################
+# attention rollup #
+####################
+
 def get_all_image_attention(img, model, apply_transform=True):
     transform = dino_he_transform()
     if isinstance(img, str):
@@ -225,3 +229,29 @@ def plot_rollup(img, attn, figsize=(5, 3), cmap=plt.cm.Greens,
     axs[2].set_ylabel('attention')
 
     return fig, axs
+
+
+################
+# multichannel #
+################
+
+def get_multichannel_image_attention(img, model):
+    # add batch dimension
+    imgs = img.unsqueeze(0)
+
+    # make sure we are in eval mode
+    model.eval()
+    with torch.no_grad():
+        attn = model.get_last_selfattention(imgs)
+
+    # just 1 img
+    attn = attn[0]
+
+    return attn.numpy()
+
+
+def plot_multichannel_attention(img, pseudo, model, display='head', alpha=.6,
+                                overlay_only=False):
+    attn = get_multichannel_image_attention(img, model)
+    return plot_attention(pseudo, attn, display=display, alpha=alpha,
+                          overlay_only=overlay_only)

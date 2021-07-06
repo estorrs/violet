@@ -1,11 +1,12 @@
 import os
+from pathlib import Path
 
 import pandas as pd
 import numpy as np
 import scanpy as sc
 import tifffile
 from openslide import OpenSlide
-#from skimage.transform import rescale
+from PIL import Image
 
 
 def normalize_counts(a):
@@ -134,3 +135,76 @@ def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5):
                     img_ids.append(f'{sample}_{r}_{c}')
 
     return imgs, img_ids
+
+
+def extract_tif_tiles(fp, resolution=55., mpp=1.):
+    img = tifffile.imread(fp)
+
+    # convert to uint8
+    img = img / np.max(img)
+    img *= 255
+    img = img.astype(np.uint8)
+
+    tile_size = int(resolution // mpp)
+    n_rows = img.shape[0] // tile_size
+    n_cols = img.shape[1] // tile_size
+
+    imgs, img_ids = [], []
+    for r in range(n_rows):
+        for c in range(n_cols):
+            r1, r2 = r * tile_size, (r + 1) * tile_size
+            c1, c2 = c * tile_size, (c + 1) * tile_size
+            tile = img[r1:r2, c1:c2]
+            imgs.append(tile)
+            img_ids.append(f'{r}_{c}')
+
+    return imgs, np.asarray(img_ids)
+
+
+def extract_and_write_multichannel(
+        sample_to_tifs, output_dir, val_samples=None, resolution=55., mpp=1.,
+        val_split=.1):
+    samples = sorted(sample_to_tifs.keys())
+    channels = sorted(set.intersection(
+        *[set(d.keys()) for d in sample_to_tifs.values()]))
+
+    for sample in samples:
+        for channel in channels:
+            Path(os.path.join(
+                output_dir, 'train', sample, channel)
+                ).mkdir(parents=True, exist_ok=True)
+            Path(os.path.join(
+                output_dir, 'val', sample, channel)
+                ).mkdir(parents=True, exist_ok=True)
+
+    for sample in samples:
+        # initialize training pool in case we need it
+        train_img_ids = None
+        for channel in channels:
+            print(channel)
+            imgs, img_ids = extract_tif_tiles(sample_to_tifs[sample][channel],
+                                              resolution=resolution, mpp=mpp)
+
+            if val_samples is None:
+                if train_img_ids is None:
+                    n = int(len(img_ids) * val_split)
+                    pool = np.random.permutation(np.arange(len(img_ids)))
+                    train_img_ids = set(img_ids[pool[:-n]])
+                for img, img_id in zip(imgs, img_ids):
+                    im = Image.fromarray(img)
+                    if img_id in train_img_ids:
+                        out = os.path.join(output_dir, 'train', sample, channel)
+                    else:
+                        out = os.path.join(output_dir, 'val', sample, channel)
+                    im.save(os.path.join(out, f'{img_id}.tif'))
+            else:
+                if sample not in val_samples:
+                    for img, img_id in zip(imgs, img_ids):
+                        im = Image.fromarray(img)
+                        out = os.path.join(output_dir, 'train', sample, channel)
+                        im.save(os.path.join(out, f'{img_id}.tif'))
+                else:
+                    for img, img_id in zip(imgs, img_ids):
+                        im = Image.fromarray(img)
+                        out = os.path.join(output_dir, 'val', sample, channel)
+                        im.save(os.path.join(out, f'{img_id}.tif'))

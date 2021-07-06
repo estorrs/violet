@@ -71,7 +71,7 @@ class STLearner(object):
 
         self.is_cuda = next(self.model.parameters()).is_cuda
 
-        self.start_time = time.time()
+        self.start = time.time()
 
     def _get_optimizer(self, epochs):
         if self.phase == '1.finetune_frozen_vit':

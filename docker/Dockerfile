@@ -6,7 +6,7 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-py37_4.8.3-Linux-x86_64.
 RUN bash ~/miniconda.sh -b -p /miniconda
 ENV PATH="/miniconda/bin:$PATH"
 
-RUN echo "hello"
+RUN echo "world"
 RUN git clone https://github.com/estorrs/violet.git 
 RUN cd violet && git checkout development
 RUN conda env create --file /violet/env.yml 

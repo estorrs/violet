@@ -8,7 +8,8 @@ import scanpy as sc
 from PIL import Image
 from torchvision import models as torchvision_models
 
-from violet.models import vit_small
+from violet.models.vit import vit_small
+from violet.models.xcit import xcit_small
 from violet.models.st import STRegressor, STLearner
 from violet.utils.model import load_pretrained_model, predict
 from violet.utils.dataloaders import (
@@ -35,7 +36,9 @@ def get_target_df(adata_map, markers, min_counts=2500, n_top_genes=200):
 
 def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
                     gpu=True, targets=None, min_counts=2500,
-                    frozen_lr=1e-4, unfrozen_lr=5e-3, resolution=55.):
+                    frozen_lr=1e-4, unfrozen_lr=5e-3, resolution=55.,
+                    model_name='xcit_small', patch_size=16,
+                    batch_size=64):
     """
     Utility function for loading a STLearner whose base is a vit
     with the associated weights.
@@ -76,9 +79,11 @@ def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
 
     val_regexs = [r'.*' + s for s in val_samples]
     train_dataloader, val_dataloader = image_regression_dataloaders(
-            img_dir, target_df, val_regexs=val_regexs)
+            img_dir, target_df, val_regexs=val_regexs, batch_size=batch_size)
 
-    model = load_pretrained_model(weights)
+
+    model = load_pretrained_model(weights, model_name=model_name,
+                                  patch_size=patch_size)
     regressor = STRegressor(model, len(train_dataloader.dataset.labels))
     if gpu:
         regressor = regressor.cuda()
@@ -86,7 +91,8 @@ def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
     summary = collate_st_learner_params(
         img_dir, weights, sorted(adata_map.keys()), val_samples, gpu,
         min_counts, frozen_lr, unfrozen_lr, run_dir, resolution,
-        train_dataloader, val_dataloader, regressor)
+        train_dataloader, val_dataloader, regressor,
+        model_name, patch_size)
     print('ST Learner summary:')
     pprint.pprint(summary)
     learner = STLearner(regressor, train_dataloader, val_dataloader,
@@ -196,9 +202,12 @@ def load_trained_st_regressor(weights, summary):
 
     Run must have saved checkpoint weights and a summary file.
     """
-    vit = vit_small()
+    if summary['vit']['model_name'] == 'vit_small':
+        model = vit_small(patch_size=summary['vit']['patch_size'])
+    elif summary['vit']['model_name'] == 'xcit_small':
+        model = xcit_small(patch_size=summary['vit']['patch_size'])
 
-    regressor = STRegressor(vit, len(summary['dataset']['targets']))
+    regressor = STRegressor(model, len(summary['dataset']['targets']))
 
     regressor.load_state_dict(torch.load(weights))
 

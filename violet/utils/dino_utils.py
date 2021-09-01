@@ -47,6 +47,18 @@ class GaussianBlur(object):
         )
 
 
+class AddGaussianNoise(object):
+    def __init__(self, mean=0., std=1.):
+        self.std = std
+        self.mean = mean
+
+    def __call__(self, tensor):
+        return tensor + torch.randn(tensor.size()) * self.std + self.mean
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
+
 class MultichannelGaussianBlur(object):
     """
     Apply Gaussian Blur to the multichannel image.
@@ -711,7 +723,9 @@ class DataAugmentationDINOMultichannel(object):
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomVerticalFlip(p=0.5),
             transforms.RandomApply(
-                [MultichannelJitter(brightness=0.4)],
+                [
+                    MultichannelJitter(brightness=0.4, noise=(0., 1.))
+                ],
                 p=0.8
             ),
         ])
@@ -747,9 +761,11 @@ class DataAugmentationDINOMultichannel(object):
 
 
 class MultichannelJitter(torch.nn.Module):
-    def __init__(self, brightness=0):
+    def __init__(self, brightness=0, noise=(0., .1), noise_prob=.05):
         super().__init__()
         self.brightness = self._check_input(brightness, 'brightness')
+        self.noise = noise
+        self.noise_prob = noise_prob
 
     @torch.jit.unused
     def _check_input(self, value, name, center=1, bound=(0, float('inf')), clip_first_on_zero=True):
@@ -770,14 +786,12 @@ class MultichannelJitter(torch.nn.Module):
         Args:
             brightness (tuple of float (min, max), optional): The range from which the brightness_factor is chosen
                 uniformly. Pass None to turn off the transformation.
-            contrast (tuple of float (min, max), optional): The range from which the contrast_factor is chosen
-                uniformly. Pass None to turn off the transformation.
 
         Returns:
             tuple: The parameters used to apply the randomized transform
             along with their random order.
         """
-        fn_idx = torch.randperm(1)
+        fn_idx = torch.randperm(2)
 
         b = None if brightness is None else float(
             torch.empty(1).uniform_(brightness[0], brightness[1]))
@@ -793,12 +807,18 @@ class MultichannelJitter(torch.nn.Module):
         for channel in range(multichannel_img.size(0)):
             img = multichannel_img[channel].unsqueeze(0)
 
+            noise_mask = torch.FloatTensor(*img.shape).uniform_() > self.noise_prob
+
             fn_idx, brightness_factor = \
                 self.get_params(self.brightness)
 
             for fn_id in fn_idx:
                 if fn_id == 0 and brightness_factor is not None:
                     img = F.adjust_brightness(img, brightness_factor)
+                if fn_id == 1 and self.noise is not None:
+                    noise = torch.abs(torch.randn(img.size()) * self.noise[1] + self.noise[0])
+                    noise[noise_mask] = 0.
+                    img = img + noise
 
             multichannel_img[channel] = img
 
@@ -808,5 +828,4 @@ class MultichannelJitter(torch.nn.Module):
     def __repr__(self):
         format_string = self.__class__.__name__ + '('
         format_string += 'brightness={0}'.format(self.brightness)
-        format_string += ', contrast={0}'.format(self.contrast)
         return format_string

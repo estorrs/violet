@@ -21,10 +21,10 @@ def transparent_cmap(cmap, n=255, a=.8):
     return mycmap
 
 
-def plot_attention(img, attn, figsize=(10, 4), display='head',
+def plot_attention(img, attn, figsize=(18, 4), display='head',
                    cmap=plt.cm.Greens, alpha=.5, overlay_only=False):
     # img: (h, w, c)
-    # attn: (n_heads, d * d + 1)
+    # attn: (n_heads, d * d + 1) or (n_heads, d * d + 1, d * d + 1)
     cm = transparent_cmap(cmap)
 
     # if displaying every head
@@ -33,7 +33,10 @@ def plot_attention(img, attn, figsize=(10, 4), display='head',
                                 figsize=figsize, squeeze=False)
         for i in range(attn.shape[0]):
             # keep only patch attention
-            head_attn = attn[i, 0, 1:]
+            if len(attn.shape) == 3:
+                head_attn = attn[i, 0, 1:]
+            else:
+                head_attn = attn[i, 1:]
             num_patches = int(np.sqrt(head_attn.shape[-1]))
             head_attn = head_attn.reshape(num_patches, num_patches)
             axs[0, i].imshow(img, alpha=alpha)
@@ -46,12 +49,12 @@ def plot_attention(img, attn, figsize=(10, 4), display='head',
                 ax.set_xticks([])
                 ax.set_yticks([])
 
-            axs[0, i].set_title(f'head {i}')
+            axs[0, i].set_title(f'head {i}', rotation=90)
 
         if not overlay_only:
-            axs[0, 0].set_ylabel('overlay')
-            axs[1, 0].set_ylabel('image')
-            axs[2, 0].set_ylabel('attention')
+            axs[0, 0].set_ylabel('overlay', rotation=0, labelpad=25)
+            axs[1, 0].set_ylabel('image', rotation=0, labelpad=25)
+            axs[2, 0].set_ylabel('attention', rotation=0, labelpad=25)
         else:
             axs[0, 0].set_ylabel('Attention Overlay')
     # mean of all heads
@@ -59,8 +62,13 @@ def plot_attention(img, attn, figsize=(10, 4), display='head',
         fig, axs = plt.subplots(3, 1, figsize=figsize)
         axs[1].imshow(img)
         num_patches = int(np.sqrt(attn.shape[-1]))
-        mean_attn = attn[:, 0, 1:].reshape(attn.shape[0],
-                                           num_patches, num_patches)
+        if len(attn.shape) == 3:
+            mean_attn = attn[:, 0, 1:].reshape(attn.shape[0],
+                                               num_patches, num_patches)
+        else:
+            mean_attn = attn[:, 1:].reshape(attn.shape[0],
+                                            num_patches, num_patches)
+
         mean_attn = mean_attn.mean(axis=0)
         axs[0].imshow(img, alpha=alpha)
         axs[0].imshow(resize(mean_attn, (img.shape[0], img.shape[1])), cmap=cm) 
@@ -239,6 +247,10 @@ def get_multichannel_image_attention(img, model):
     # add batch dimension
     imgs = img.unsqueeze(0)
 
+    # make sure both on same device
+    if next(model.parameters()).is_cuda and not imgs.is_cuda:
+        imgs = imgs.cuda()
+
     # make sure we are in eval mode
     model.eval()
     with torch.no_grad():
@@ -247,7 +259,36 @@ def get_multichannel_image_attention(img, model):
     # just 1 img
     attn = attn[0]
 
+    # back to cpu
+    if attn.is_cuda:
+        attn = attn.cpu()
+
     return attn.numpy()
+
+
+def get_multichannel_images_attentions(dataloader, model):
+    is_gpu = next(iter(model.parameters())).is_cuda
+    attns = None
+    model.eval()
+    with torch.no_grad():
+        for x in dataloader:
+            if len(x) == 2:
+                x = x[0]
+
+            if is_gpu:
+                x = x.cuda()
+
+            attn = model.get_last_selfattention(x)
+
+            if attns is None:
+                attns = attn
+            else:
+                attns = torch.cat((attns, attn), dim=0)
+
+    if attns.is_cuda:
+        attns = attns.cpu()
+
+    return attns.numpy()
 
 
 def plot_multichannel_attention(img, pseudo, model, display='head', alpha=.6,
@@ -255,3 +296,5 @@ def plot_multichannel_attention(img, pseudo, model, display='head', alpha=.6,
     attn = get_multichannel_image_attention(img, model)
     return plot_attention(pseudo, attn, display=display, alpha=alpha,
                           overlay_only=overlay_only)
+
+

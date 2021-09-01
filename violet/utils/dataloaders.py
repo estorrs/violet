@@ -5,6 +5,7 @@ import numpy as np
 
 import torch
 from torchvision import datasets, transforms
+import torchvision.transforms.functional as F
 from torchvision.datasets.folder import default_loader
 
 

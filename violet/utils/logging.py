@@ -12,7 +12,7 @@ def get_writer(log_dir):
 def collate_st_learner_params(img_dir, weights, samples, val_samples, gpu,
                               min_counts, frozen_lr, unfrozen_lr, run_dir,
                               resolution, train_dataloader, val_dataloader,
-                              vit):
+                              vit, model_name, patch_size):
     return {
         'run_directory': run_dir,
         'dataset': {
@@ -31,10 +31,12 @@ def collate_st_learner_params(img_dir, weights, samples, val_samples, gpu,
         },
         'vit': {
             'pretrained_weights': weights,
-            'patch_size': vit.vit.patch_embed.proj.kernel_size[0],
+#             'patch_size': vit.vit.patch_embed.proj.kernel_size[0],
+            'patch_size': patch_size,
             'img_size': vit.vit.patch_embed.img_size,
             'total_patches': vit.vit.patch_embed.num_patches,
             'embed_dim': vit.vit.embed_dim,
+            'model_name': model_name,
         },
         'head': {
             'type': 'linear',

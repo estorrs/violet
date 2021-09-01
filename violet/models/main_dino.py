@@ -27,6 +27,7 @@ from torchvision import models as torchvision_models
 import violet.utils.dino_utils as utils
 import violet.models.vit as vits
 from violet.models.vit import DINOHead
+from violet.models.xcit import xcit_small
 
 from violet.utils.dataloaders import dino_multichannel_transform, MultichannelImageDataset
 from violet.utils.dino_utils import DataAugmentationDINO, DataAugmentationDINOMultichannel
@@ -40,7 +41,7 @@ def get_args_parser():
 
     # Model parameters
     parser.add_argument('--arch', default='vit_small', type=str,
-        choices=['vit_tiny', 'vit_small', 'vit_base', 'deit_tiny', 'deit_small', 'xcit_small'] + torchvision_archs,
+        choices=['vit_tiny', 'vit_small', 'vit_base', 'xcit_small'] + torchvision_archs,
         help="""Name of architecture to train. For quick experiments with ViTs,
         we recommend using vit_tiny or vit_small.""")
     parser.add_argument('--patch_size', default=16, type=int, help="""Size in pixels
@@ -175,6 +176,17 @@ def train_dino(args):
         teacher = vits.__dict__[args.arch](
             patch_size=args.patch_size,
             in_chans=3 if args.input_type != 'multichannel' else len(dataset.channels)
+        )
+        embed_dim = student.embed_dim
+    elif 'xcit' in args.arch:
+        student = xcit_small(
+            patch_size=args.patch_size,
+            in_chans=3 if args.input_type != 'multichannel' else len(dataset.channels),
+            drop_path_rate=0.1
+        )
+        teacher = xcit_small(
+            patch_size=args.patch_size,
+            in_chans=3 if args.input_type != 'multichannel' else len(dataset.channels),
         )
         embed_dim = student.embed_dim
     # otherwise, we check if the architecture is in torchvision models

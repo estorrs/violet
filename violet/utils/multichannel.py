@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from einops import rearrange
+from torchvision import transforms
+
+from torchvision.datasets.folder import default_loader
+import torchvision.transforms.functional as F
 
 
 def create_pseudocolor_image(img, dataset, channels, colors=None):
@@ -18,6 +22,34 @@ def create_pseudocolor_image(img, dataset, channels, colors=None):
     for i, c in enumerate(idxs):
         new += np.repeat(np.expand_dims(img[:, :, c], axis=-1),
                          3, axis=-1) * np.asarray(colors[i])
+
+    new = (new / np.max(new)) * 255.
+    return new.astype(np.uint8)
+
+
+def create_pseudocolor_image_from_dict(channel_dict, channels, colors=None):
+    if colors is None:
+        colors = sns.color_palette()
+    new = None
+    for i, c in enumerate(channels):
+        img_transform = transforms.Compose(
+            [transforms.ToTensor(), transforms.Grayscale()])
+        if isinstance(channel_dict[c], str):
+            img = img_transform(default_loader(channel_dict[c])).numpy()
+            img = img[0]
+        else:
+            img = channel_dict[c]
+
+        img = np.repeat(np.expand_dims(
+            img, axis=-1), 3, axis=-1)
+        img /= np.max(img)
+        img = img * np.asarray(colors[i])
+        img = img / np.max(img)
+
+        if new is None:
+            new = img
+        else:
+            new += img
 
     new = (new / np.max(new)) * 255.
     return new.astype(np.uint8)

@@ -1,6 +1,7 @@
 import torch
 
 from violet.models.vit import vit_small
+from violet.models.xcit import xcit_small
 from violet.utils.dino_utils import load_pretrained_weights
 
 
@@ -13,14 +14,22 @@ def load_pretrained_model(pretrained_weights, model_name='vit_small',
 
     Currently only vit_small implemented
     """
-    model = vit_small(num_classes=0, in_chans=in_chans)
-    load_pretrained_weights(model, pretrained_weights, 'teacher', 'vit_small',
-                            patch_size)
+    if model_name == 'vit_small':
+        model = vit_small(num_classes=0, in_chans=in_chans, patch_size=patch_size)
+        load_pretrained_weights(model, pretrained_weights, 'teacher', 'vit_small',
+                                patch_size)
+    elif model_name == 'xcit_small':
+        model = xcit_small(in_chans=in_chans, patch_size=patch_size)
+        load_pretrained_weights(model, pretrained_weights, 'teacher', 'xcit_small',
+                                patch_size)
+
+    else:
+        raise RuntimeError(f'{model_name} is not a valid model name')
 
     return model
 
 
-def predict(dataloader, model, out_dim=None):
+def predict(dataloader, model, out_dim=None, nb=10):
     """
     Utility function to collate predictions from a given
     model/dataloader.
@@ -40,6 +49,8 @@ def predict(dataloader, model, out_dim=None):
         # refactor eventually so wont break for batch size of 2
         if len(next(iter(dataloader))) == 2:
             for i, (x, y) in enumerate(dataloader):
+                if i % nb == 0:
+                    print(i, i * x.shape[0])
                 if is_cuda:
                     x, y = x.cuda(), y.cuda()
                 preds = model(x)
@@ -49,6 +60,8 @@ def predict(dataloader, model, out_dim=None):
         # otherwise assume single
         else:
             for i, x in enumerate(dataloader):
+                if i % nb == 0:
+                    print(i, i * x.shape[0])
                 if is_cuda:
                     x = x.cuda()
                 preds = model(x)

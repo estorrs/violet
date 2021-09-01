@@ -67,21 +67,25 @@ def display_predictions(he_img, df, tile_size, hue, scale, alpha=.5, s=1,
     plt.scatter(cs, rs, s=[s] * len(rs), c=vals, cmap=cmap, alpha=alpha)
 
 
-def display_2d_scatter(df, hue, s=1, cmap=cm.Blues, hue_order=None, scale=.1,
-                       legend=False):
+def display_2d_scatter(df, hue, s=1, cmap='viridis', hue_order=None, scale=.1,
+                       legend=False, spacing=1, ax=None):
     rs, cs, vals = [], [], []
     # flip so it matches up with images
     for i, row in df.iterrows():
         r, c = int(i.split('_')[-2]), int(i.split('_')[-1])
-        rs.append(int(r))
-        cs.append(int(c))
+        rs.append(int(r) * spacing)
+        cs.append(int(c) * spacing)
         vals.append(row[hue])
 
     rs = [r * -1 for r in rs]
 
     p_df = pd.DataFrame.from_dict({'x': cs, 'y': rs, hue: vals})
 
-    fig, ax = plt.subplots(
-        figsize=(np.max(cs) * scale, (np.min(rs) * -1) * scale))
-    sns.scatterplot(data=p_df, x='x', y='y', hue=hue, hue_order=hue_order,
-                    legend=legend)
+    if ax is None:
+        fig, ax = plt.subplots(
+            figsize=(np.max(cs) * scale, (np.min(rs) * -1) * scale))
+        sns.scatterplot(data=p_df, x='x', y='y', hue=hue, hue_order=hue_order,
+                        legend=legend, palette=cmap)
+    else:
+        sns.scatterplot(data=p_df, x='x', y='y', hue=hue, hue_order=hue_order,
+                        legend=legend, palette=cmap, ax=ax)

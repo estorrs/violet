@@ -1,5 +1,4 @@
-#FROM ubuntu:18.04
-FROM pytorch/pytorch:1.8.1-cuda10.2-cudnn7-runtime
+FROM ubuntu:18.04
 
 RUN apt-get update && apt-get install -y vim wget curl git build-essential
 
@@ -7,11 +6,10 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-py37_4.8.3-Linux-x86_64.
 RUN bash ~/miniconda.sh -b -p /miniconda
 ENV PATH="/miniconda/bin:$PATH"
 
-RUN echo "2"
-RUN git clone https://github.com/estorrs/violet.git 
-RUN cd violet && git checkout development
-RUN conda env create --file violet/env.yml 
+RUN conda install -y pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch
 
-ENV PATH="/miniconda/envs/violet/bin:$PATH"
+RUN echo "2"
+
+ENV PATH="/miniconda/bin:$PATH"
 
 CMD /bin/bash

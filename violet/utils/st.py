@@ -247,7 +247,7 @@ def predict_he_tiles(img_dir, weights, summary, regexs=None, batch_size=64,
 
 
 def predict_visium(spatial_fp, high_res_fp, weights, summary,
-                   tmp_dir=os.getcwd(), gpu=True):
+                   tmp_dir=os.getcwd(), gpu=True, ref=None):
     """
     Utility function for predicting visium spaceranger output objects.
 
@@ -272,7 +272,7 @@ def predict_visium(spatial_fp, high_res_fp, weights, summary,
             'spatial': spatial_fp, 'tif': high_res_fp
         }
     }
-    imgs, img_ids = extract_st_tiles(data_map)
+    imgs, img_ids = extract_st_tiles(data_map, ref=ref)
 
     fps = []
     for img, img_id in zip(imgs, img_ids):

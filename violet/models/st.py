@@ -155,7 +155,7 @@ class STLearner(object):
 
             self._summarize(epoch + 1, train_loss, val_loss, time_delta)
 
-            if save_every is not None and epoch + 1 % save_every == 0:
+            if save_every is not None and (epoch + 1) % save_every == 0:
                 self.save_checkpoint(tag=f'_{epoch + 1}')
 
             if self.writer is not None:

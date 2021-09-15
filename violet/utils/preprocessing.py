@@ -14,9 +14,10 @@ from skimage.transform import rescale
 
 import pkgutil
 
-STAIN_REF = np.array(Image.open(io.BytesIO(
-    pkgutil.get_data("violet", "data/stain_reference.jpeg")
-)))
+STAIN_REFS = {
+    'pancreas': np.array(Image.open(io.BytesIO(pkgutil.get_data("violet", "data/pancreas_stain_reference.jpeg")))),
+    'kidney': np.array(Image.open(io.BytesIO(pkgutil.get_data("violet", "data/kidney_stain_reference.jpeg")))),
+}
 
 
 def normalize_counts(a, method='log'):
@@ -64,7 +65,11 @@ def is_background(tile, thresh=220., coverage=.5):
 
 def normalize_he_image(img, ref=None, b=2000, coverage=.25):
     if ref is None:
-        target = staintools.LuminosityStandardizer.standardize(STAIN_REF)
+        target = staintools.LuminosityStandardizer.standardize(STAIN_REFS['pancreas'])
+    elif ref == 'kidney':
+        target = staintools.LuminosityStandardizer.standardize(STAIN_REFS['kidney'])
+    elif ref == 'pancreas':
+        target = staintools.LuminosityStandardizer.standardize(STAIN_REFS['pancreas'])
     else:
         target = staintools.LuminosityStandardizer.standardize(ref)
     normalizer = staintools.StainNormalizer(method='vahadane')
@@ -85,7 +90,7 @@ def normalize_he_image(img, ref=None, b=2000, coverage=.25):
     return new.astype(np.uint8)
 
 
-def extract_st_tiles(data_map, normalize=True):
+def extract_st_tiles(data_map, normalize=True, ref=None):
     """
     Extract H&E tiles from high resolution tif that corresponds to ST data
 
@@ -120,7 +125,7 @@ def extract_st_tiles(data_map, normalize=True):
 
         if normalize:
             b = 2000 - (2000 % int(d))
-            normalized_img = normalize_he_image(img, b=b)
+            normalized_img = normalize_he_image(img, b=b, ref=ref)
 
         for (c, r), barcode in zip(sample_to_coords[s], sample_to_barcodes[s]):
             r1, r2 = int(r - (d * .5)),  int(r + (d * .5))
@@ -178,7 +183,7 @@ def get_he_image(fp, scale=.05):
 
 
 def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5,
-                      normalize=True):
+                      normalize=True, ref=None):
     imgs, img_ids = [], []
     for sample, svs in sample_to_svs.items():
         o = OpenSlide(svs)
@@ -195,7 +200,7 @@ def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5,
 
         if normalize:
             b = 2000 - (2000 % tile_size)
-            normalized_img = normalize_he_image(img, b=b)
+            normalized_img = normalize_he_image(img, b=b, ref=ref)
 
         for r in range(n_rows):
             for c in range(n_cols):
@@ -214,7 +219,7 @@ def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5,
     return imgs, img_ids
 
 
-def extract_tif_tiles(fp, resolution=55., mpp=1., normalize=True):
+def extract_tif_tiles(fp, resolution=55., mpp=1., normalize=True, ref=None):
     img = tifffile.imread(fp)
 
     # convert to uint8
@@ -229,7 +234,7 @@ def extract_tif_tiles(fp, resolution=55., mpp=1., normalize=True):
 
     if normalize:
         b = (2000 - (2000 % tile_size)) % tile_size
-        normalized_img = normalize_he_image(img, b=b)
+        normalized_img = normalize_he_image(img, b=b, ref=ref)
 
     imgs, img_ids = [], []
     count = 0

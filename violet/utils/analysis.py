@@ -68,7 +68,7 @@ def display_predictions(he_img, df, tile_size, hue, scale, alpha=.5, s=1,
 
 
 def display_2d_scatter(df, hue, s=1, cmap='viridis', hue_order=None, scale=.1,
-                       legend=False, spacing=1, ax=None):
+                       legend=False, spacing=1, ax=None, region=None):
     rs, cs, vals = [], [], []
     # flip so it matches up with images
     for i, row in df.iterrows():
@@ -80,6 +80,12 @@ def display_2d_scatter(df, hue, s=1, cmap='viridis', hue_order=None, scale=.1,
     rs = [r * -1 for r in rs]
 
     p_df = pd.DataFrame.from_dict({'x': cs, 'y': rs, hue: vals})
+
+    if region is not None:
+        r1, r2 = region[0]
+        c1, c2 = region[1]
+        p_df = p_df[((p_df['y'] >= r1) & (p_df['y'] <= r2))]
+        p_df = p_df[((p_df['x'] >= c1) & (p_df['x'] <= c2))]
 
     if ax is None:
         fig, ax = plt.subplots(

@@ -70,7 +70,10 @@ def main(args):
                     else args.input_image.split('/')[-1].split('.')[0])
         data_map = {image_id: {'tif': args.input_image,
                                'spatial': args.spaceranger_outs}}
-        imgs, img_ids = extract_st_tiles(data_map, ref=args.reference)
+        imgs, img_ids = extract_st_tiles(
+            data_map,
+            normalize=True if args.reference is not None else False,
+            ref=args.reference)
         logging.info(f'{len(imgs)} tiles extracted')
         write_imgs(imgs, img_ids, args.output_dir)
     elif args.input_type == 'svs':
@@ -78,7 +81,9 @@ def main(args):
                     else args.input_image.split('/')[-1].split('.')[0])
         data_map = {image_id: args.input_image}
         imgs, img_ids = extract_svs_tiles(
-            data_map, resolution=float(args.resolution), ref=args.reference)
+            data_map,
+            normalize=True if args.reference is not None else False,
+            resolution=float(args.resolution), ref=args.reference)
         write_imgs(imgs, img_ids, args.output_dir)
     logging.info('tiles written')
 

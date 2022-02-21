@@ -24,6 +24,7 @@ import torch.distributed as dist
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as F
 from PIL import ImageFilter, ImageOps
+from stainaug import Augmentor
 
 
 class GaussianBlur(object):
@@ -658,9 +659,40 @@ def has_batchnorms(model):
     return False
 
 
+class HE_color_transform(torch.nn.Module):
+    def __init__(self):
+        self.transform = Augmentor()
+
+    def forward(self, x):
+        is_pil, is_tensor = False, False
+        # check to see if we are pil
+        if 'PIL' in str(type(x)):
+            is_pil = True
+            x = np.asarray(x)
+
+        # check to see if we are tensor it is assumed to be c, h, w
+        # and 0. - 1.
+        if isinstance(x, torch.Tensor):
+            is_tensor = True
+            x = (x.numpy() * 255).astype(np.uint8)
+
+        x = self.transform.augment_HE(x)
+
+        if is_pil:
+            return Image.fromarray(x)
+
+        if is_tensor:
+            return torch.tensor(x) / 255.
+
+        return x
+
+    def __call__(self, x):
+        return self.forward(x)
+
+
 class DataAugmentationDINO(object):
     def __init__(self, global_crops_scale, local_crops_scale, local_crops_number,
-                 data_type='oct'):
+                 data_type='oct', augment_he=True):
         flip_and_color_jitter = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomVerticalFlip(p=0.5),
@@ -671,10 +703,12 @@ class DataAugmentationDINO(object):
             transforms.RandomGrayscale(p=0.2),
         ])
 
+##         he_transform = HE_color_transform()
+
         if data_type == 'oct':
-            norm = transforms.Normalize((0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
+            norm = transforms.Normalize((0.76806694, 0.47375619, 0.58864233), (0.17746654, 0.21851493, 0.18837758))
         elif data_type == 'ffpe':
-            norm = transforms.Normalize((0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
+            norm = transforms.Normalize((0.76806694, 0.47375619, 0.58864233), (0.17746654, 0.21851493, 0.18837758))
         else:
             raise RuntimeError('Invalid data type')
 
@@ -682,10 +716,12 @@ class DataAugmentationDINO(object):
             transforms.ToTensor(),
             norm,
         ])
+##         identity = torch.nn.Identity()
 
         # first global crop
         self.global_transfo1 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+##             he_transform if augment_he else identity,
             flip_and_color_jitter,
             GaussianBlur(1.0),
             normalize,
@@ -693,6 +729,7 @@ class DataAugmentationDINO(object):
         # second global crop
         self.global_transfo2 = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=global_crops_scale, interpolation=Image.BICUBIC),
+##             he_transform if augment_he else identity,
             flip_and_color_jitter,
             GaussianBlur(0.1),
             Solarization(0.2),
@@ -702,6 +739,7 @@ class DataAugmentationDINO(object):
         self.local_crops_number = local_crops_number
         self.local_transfo = transforms.Compose([
             transforms.RandomResizedCrop(96, scale=local_crops_scale, interpolation=Image.BICUBIC),
+##             he_transform if augment_he else identity,
             flip_and_color_jitter,
             GaussianBlur(p=0.5),
             normalize,

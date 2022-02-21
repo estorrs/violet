@@ -2,14 +2,13 @@ import os
 import re
 
 import numpy as np
-
 import torch
 from torchvision import datasets, transforms
 import torchvision.transforms.functional as F
 from torchvision.datasets.folder import default_loader
+from stainaug import Augmentor
 
-
-from violet.utils.dino_utils import DataAugmentationDINOMultichannel
+from violet.utils.dino_utils import DataAugmentationDINOMultichannel, HE_color_transform
 
 
 def listfiles(folder, regex=None):
@@ -29,7 +28,33 @@ def dino_he_transform(resize=(224, 224)):
         # normalize by means and stds from ST histopathology dataset
         # rather than imagenet
         transforms.Normalize(
-            (0.6591, 0.5762, 0.7749), (0.2273, 0.2373, 0.1685))
+            (0.76806694, 0.47375619, 0.58864233), (0.17746654, 0.21851493, 0.18837758)
+        )
+    ])
+
+
+def dino_he_transform_with_aug(resize=(224, 224)):
+    return transforms.Compose([
+        transforms.Resize(resize, interpolation=3),
+        transforms.ToTensor(),
+        HE_color_transform(),
+        # normalize by means and stds from ST histopathology dataset
+        # rather than imagenet
+        transforms.Normalize(
+            (0.74153281, 0.42759532, 0.67904226), (0.15070522, 0.16646285, 0.14752357)
+        ),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.5),
+##         transforms.RandomApply(
+##             [transforms.ColorJitter(brightness=0.4, contrast=0.4,
+##                                     saturation=0.2, hue=0.1)],
+##             p=0.8
+##         ),
+##         transforms.RandomApply(
+##             [transforms.ColorJitter(brightness=0.4, contrast=0.0,
+##                                     saturation=0.0, hue=0.1)],
+##             p=0.8
+##         ),
     ])
 
 
@@ -177,7 +202,8 @@ def get_dataloader(img_dir, batch_size=64, drop_last=True, shuffle=True,
     return dataloader
 
 
-def image_classification_dataloaders(root_dir, batch_size=64):
+def image_classification_dataloaders(root_dir, batch_size=64,
+                                     resize=(224, 224)):
     """
     Get training and validation dataloaders for an image directory.
 
@@ -186,11 +212,12 @@ def image_classification_dataloaders(root_dir, batch_size=64):
     train_dataloader = get_dataloader(
         os.path.join(root_dir, 'train'),
         batch_size=batch_size,
+        transform=dino_he_transform_with_aug(resize=resize),
     )
     val_dataloader = get_dataloader(
         os.path.join(root_dir, 'val'),
         batch_size=batch_size,
-        shuffle=False
+        shuffle=False,
     )
 
     return train_dataloader, val_dataloader
@@ -215,19 +242,20 @@ def image_regression_dataloaders(root_dir, target_df, transform=None,
         - columns are target variables.
     """
     if transform is None:
-        transform = dino_he_transform(resize=resize)
+        train_transform = dino_he_transform_with_aug(resize=resize)
+        val_transform = dino_he_transform(resize=resize)
 
     if val_regexs is None:
         train_dataset = ImageRegressionDataset(os.path.join(root_dir, 'train'),
-                                               target_df, transform=transform)
+                                               target_df, transform=train_transform)
         val_dataset = ImageRegressionDataset(os.path.join(root_dir, 'val'),
-                                             target_df, transform=transform)
+                                             target_df, transform=val_transform)
     else:
         train_dataset = ImageRegressionDataset(root_dir,
-                                               target_df, transform=transform,
+                                               target_df, transform=train_transform,
                                                exclude_regexs=val_regexs)
         val_dataset = ImageRegressionDataset(root_dir,
-                                             target_df, transform=transform,
+                                             target_df, transform=val_transform,
                                              include_regexs=val_regexs)
 
     train_dataloader = torch.utils.data.DataLoader(

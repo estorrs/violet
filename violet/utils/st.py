@@ -35,7 +35,7 @@ def get_target_df(adata_map, markers, min_counts=2500, n_top_genes=200):
 
 
 def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
-                    gpu=True, targets=None, min_counts=2500,
+                    gpu=True, target_df=None, targets=None, min_counts=2500,
                     frozen_lr=1e-4, unfrozen_lr=5e-3, resolution=55.,
                     model_name='xcit_small', patch_size=16,
                     batch_size=64):
@@ -75,7 +75,8 @@ def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
     max_lr: float
         - Max learning rate for cos scheduler.
     """
-    target_df = get_target_df(adata_map, targets, min_counts=min_counts)
+    if target_df is None:
+        target_df = get_target_df(adata_map, targets, min_counts=min_counts)
 
     val_regexs = [r'.*' + s for s in val_samples]
     train_dataloader, val_dataloader = image_regression_dataloaders(
@@ -103,9 +104,10 @@ def load_st_learner(img_dir, weights, adata_map, run_dir, val_samples=None,
 
 
 def load_imagenet_st_learner(img_dir, weights, adata_map, run_dir,
-                             val_samples=None, gpu=True, targets=None,
-                             min_counts=2500, frozen_lr=1e-4, unfrozen_lr=5e-3,
-                             resolution=55., model_name='resnet50'):
+                             val_samples=None, gpu=True, target_df=None,
+                             targets=None, min_counts=2500, frozen_lr=1e-4,
+                             unfrozen_lr=5e-3, resolution=55.,
+                             model_name='resnet50'):
     """
     Utility function for loading a STLearner whose base is the specified
     torchvision pretrained model.
@@ -142,7 +144,8 @@ def load_imagenet_st_learner(img_dir, weights, adata_map, run_dir,
     max_lr: float
         - Max learning rate for cos scheduler.
     """
-    target_df = get_target_df(adata_map, targets, min_counts=min_counts)
+    if target_df is None:
+        target_df = get_target_df(adata_map, targets, min_counts=min_counts)
 
     val_regexs = [r'.*' + s for s in val_samples]
     # use imagenet transform since we are pretrained from imagenet
@@ -180,9 +183,10 @@ def load_imagenet_st_learner(img_dir, weights, adata_map, run_dir,
 def run_st_learner(learner, frozen_epochs, unfrozen_epochs,
                    save_every=2):
     print(f'Training frozen vit for {frozen_epochs} epochs')
-    learner.fit(frozen_epochs)
+    if frozen_epochs:
+        learner.fit(frozen_epochs)
 
-    chkpt_fp = learner.save_checkpoint()
+    chkpt_fp = learner.save_checkpoint('last_frozen')
     print(f'Saved checkpoint at {chkpt_fp}')
 
     print('Unfreezing weights')
@@ -301,7 +305,7 @@ def predict_visium(spatial_fp, high_res_fp, weights, summary,
 
 
 def predict_svs(svs_fp, weights, summary, tmp_dir=os.getcwd(),
-                gpu=True, res=55., background_pct=.5):
+                gpu=True, res=55., background_pct=.5, return_tiles=False):
     data_map = {svs_fp.split('/')[-1].split('.')[0]: svs_fp}
     sum = json.load(open(summary))
     r = sum['dataset']['resolution'] if 'resolution' in sum['dataset'] else res
@@ -322,4 +326,6 @@ def predict_svs(svs_fp, weights, summary, tmp_dir=os.getcwd(),
     for fp in fps:
         os.remove(fp)
 
-    return preds
+    if not return_tiles:
+        return preds
+    return preds, imgs, img_ids

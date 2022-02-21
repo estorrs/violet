@@ -102,8 +102,9 @@ class STLearner(object):
         self.phase = '2.finetune_unfrozen_vit'
 
     def save_checkpoint(self, tag=''):
-        chkpt = f'{self.phase}{tag}.pth'
+        chkpt = f'{self.phase}_{tag}.pth'
         save_path = os.path.join(self.checkpoint_dir, chkpt)
+        print(f'saving checkpoint at {save_path}')
         torch.save(self.model.state_dict(), save_path)
 
         return save_path
@@ -156,7 +157,8 @@ class STLearner(object):
             self._summarize(epoch + 1, train_loss, val_loss, time_delta)
 
             if save_every is not None and (epoch + 1) % save_every == 0:
-                self.save_checkpoint(tag=f'_{epoch + 1}')
+                tag = epoch + 1
+                self.save_checkpoint(tag=f'{tag}')
 
             if self.writer is not None:
                 self.writer.add_scalar(f'{self.phase}: train loss', train_loss,

@@ -90,7 +90,7 @@ def normalize_he_image(img, ref=None, b=2000, coverage=.25):
     return new.astype(np.uint8)
 
 
-def extract_st_tiles(data_map, normalize=True, ref=None):
+def extract_st_tiles(data_map, normalize=False, ref=None, regions=None):
     """
     Extract H&E tiles from high resolution tif that corresponds to ST data
 
@@ -135,6 +135,20 @@ def extract_st_tiles(data_map, normalize=True, ref=None):
                 imgs.append(normalized_img[r1:r2, c1:c2])
             else:
                 imgs.append(img[r1:r2, c1:c2])
+
+            if regions is not None:
+                imgs[-1] = imgs[-1:]
+                for w in regions:
+                    h = int((d * w) // 2)
+                    rd = int(d // 2)
+
+                    region_r1, region_r2 = r1 - (h - rd), r2 + (h - rd)
+                    region_c1, region_c2 = c1 - (h - rd), c2 + (h - rd)
+                    if normalize:
+                        imgs[-1].append(normalized_img[region_r1:region_r2, region_c1:region_c2])
+                    else:
+                        imgs[-1].append(img[region_r1:region_r2, region_c1:region_c2])
+
             img_ids.append(f'{s}_{barcode}')
 
     return imgs, img_ids
@@ -183,7 +197,7 @@ def get_he_image(fp, scale=.05):
 
 
 def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5,
-                      normalize=True, ref=None):
+                      normalize=False, ref=None, regions=None):
     imgs, img_ids = [], []
     for sample, svs in sample_to_svs.items():
         o = OpenSlide(svs)
@@ -198,12 +212,15 @@ def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5,
         n_rows = img.shape[0] // tile_size
         n_cols = img.shape[1] // tile_size
 
+        print(n_rows, n_cols)
+
         if normalize:
             b = 2000 - (2000 % tile_size)
             normalized_img = normalize_he_image(img, b=b, ref=ref)
 
         for r in range(n_rows):
             for c in range(n_cols):
+##                 r_width = np.max(regions)
                 r1, r2 = r * tile_size, (r + 1) * tile_size
                 c1, c2 = c * tile_size, (c + 1) * tile_size
                 tile = img[r1:r2, c1:c2]
@@ -216,10 +233,24 @@ def extract_svs_tiles(sample_to_svs, resolution=55., background_pct=.5,
                             imgs.append(tile)
                             img_ids.append(f'{sample}_{r}_{c}')
 
+                        if regions is not None:
+                            imgs[-1] = imgs[-1:]
+                            for w in regions:
+                                h = int((tile_size * w) // 2)
+                                d = int(tile_size // 2)
+
+                                region_r1, region_r2 = r1 - (h - d), r2 + (h - d)
+                                region_c1, region_c2 = c1 - (h - d), c2 + (h - d)
+                                region_tile = img[region_r1:region_r2, region_c1:region_c2]
+                                if normalize and np.sum(normalized_img[r1:r2, c1:c2]) > 0.:
+                                    imgs[-1].append(normalized_img[region_r1:region_r2, region_c1:region_c2])
+                                else:
+                                    imgs[-1].append(region_tile)
+
     return imgs, img_ids
 
 
-def extract_tif_tiles(fp, resolution=55., mpp=1., normalize=True, ref=None):
+def extract_tif_tiles(fp, resolution=55., mpp=1., normalize=False, ref=None):
     img = tifffile.imread(fp)
 
     # convert to uint8
